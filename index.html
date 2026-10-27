@@ -94,13 +94,22 @@
   const POUNCE_RECOVER = 0.8;    // stunned on the floor after a pounce
   const POUNCE_COOLDOWN = 3.2;
 
+  // Boss: "The Headmaster" — can't be killed, only stunned; hunts the player relentlessly
+  const HM_R = 14;
+  const HM_SPEED = 100;
+  const HM_STUN = 5;
+  const HM_HITS = 10;            // hits it takes to stun him...
+  const HM_DECAY = 1.5;          // ...and how many wear off per second, so trickle fire doesn't work
+  const HM_REACH = 12;           // the ruler reaches further than a zombie's arm
+
   // Light
   const LAMP_R = 210;
   const FLASH_RANGE = 290;
   const FLASH_HALF = 0.42;
 
-  // Legend: # wall, . floor, P player, Z zombie, L lamp, F flickering lamp, H medkit, S shotgun, M smg,
+  // Legend: # wall, . floor, P player, Z zombie, L lamp, F flickering lamp, H medkit, S shotgun, M smg, K key, D boss (Headmaster),
   //   B boss (Bloater), N boss (Nurse), E exit
+  //   school props: s student desk, l locker (solid)
   //   hospital props: b bed, d desk, c cabinet, w wheelchair, o operating table (solid);
   //   i IV stand, X red-cross floor mark (decor, walkable)
   const LEVELS = [
@@ -169,6 +178,42 @@
         '#..P....w.#..Z...F..#.b.....b.#.w....w...w.#',
         '#......F..#.........#....H.L..#..F......F..#',
         '#.........#.c.c.c.c.#.........#..........H.#',
+        '############################################',
+      ],
+    },
+    {
+      name: 'Level 3 — The School',
+      hint: 'Find 5 keys to open the main door — shoot to stun the Headmaster',
+      theme: 'school',
+      keys: 5,
+      darkness: 0.5,
+      lampR: 190, lampRgb: '255,244,205', lampKind: 'tube', flickerRgb: '255,244,205',
+      map: [
+        '############################################',
+        '#.............#............K.#.............#',
+        '#.............#..............#...........K.#',
+        '#....s...s.F..#..s.s.s.s.s...#....s.L.s....#',
+        '#..........................................#',
+        '#..s.s.F.s.s.....s.s.D.sFs......s.s.s.s.s..#',
+        '#.............#..............#.............#',
+        '#..s.s.s.s.s..#..s.s.s.s.s...#..s.s.sFs....#',
+        '#.K..F........#..............#.............#',
+        '#.............#..............#.............#',
+        '######..#############..#############..######',
+        '#..lll....lll............lll....lll........#',
+        '#...L.....L....F.........L....F...F.....L.E#',
+        '#........lll....lll.......lll..........lll.#',
+        '######..#############..#############..######',
+        '#.............#..............#.............#',
+        '#..s.s.s.s.s..#..s...s.s.s...#..s.s...s.s..#',
+        '#.............#..............#.............#',
+        '#.............#..s.s.F...s...#..s...F.s....#',
+        '#..M...F...................................#',
+        '#................s.s.s.s.s......s.s.s......#',
+        '#.............#..............#.............#',
+        '#..F...S....F.#..s.s.s.sFs...#..s.s.s.s.s..#',
+        '#..P..........#.............K#........F....#',
+        '#.............#..............#...........K.#',
         '############################################',
       ],
     },
@@ -279,6 +324,8 @@
       // toggle switch: a hard clack, then a lighter snap as the contact seats
       case 'switchon': tone('square', 900, 350, 0.07, 0.025); noiseHit(5000, 0.12, 0.02); tone('triangle', 1800, 1200, 0.05, 0.02, 0.045); break;
       case 'switchoff': tone('square', 700, 250, 0.07, 0.025); noiseHit(4000, 0.12, 0.02); tone('triangle', 1300, 800, 0.05, 0.02, 0.045); break;
+      case 'key': tone('sine', 1568, 1568, 0.12, 0.3); tone('sine', 2093, 2093, 0.1, 0.35, 0.09); break;
+      case 'stun': tone('square', 320, 70, 0.2, 0.22); noiseHit(1800, 0.3, 0.1); tone('triangle', 880, 660, 0.1, 0.35, 0.06); break;
       case 'blast': noiseHit(1400, 0.8, 0.35); tone('sine', 110, 30, 0.7, 0.2); break;
       case 'buzz': tone('square', 120, 118, 0.035 * vol, 0.12); noiseHit(4000, 0.05 * vol, 0.04); break;
       case 'pump': noiseHit(2500, 0.15, 0.06); noiseHit(1800, 0.18, 0.08, 0.18); break;
@@ -390,7 +437,7 @@
     darkness = L.darkness;
     const rng = seeded(1337 + i);
     let start = { x: T * 1.5, y: T * 1.5 };
-    const SOLID_PROPS = { b: 'bed', d: 'desk', c: 'cabinet', w: 'wheelchair', o: 'table' };
+    const SOLID_PROPS = { b: 'bed', d: 'desk', c: 'cabinet', w: 'wheelchair', o: 'table', s: 'sdesk', l: 'locker' };
     const DECOR = { i: 'iv', X: 'cross' };
     for (let y = 0; y < MH; y++) {
       for (let x = 0; x < MW; x++) {
@@ -403,6 +450,8 @@
         else if (ch === 'Z') zombies.push(makeZombie(cx, cy));
         else if (ch === 'B') zombies.push(makeZombie(cx, cy, 'bloater'));
         else if (ch === 'N') zombies.push(makeZombie(cx, cy, 'nurse'));
+        else if (ch === 'D') zombies.push(makeZombie(cx, cy, 'headmaster'));
+        else if (ch === 'K') pickups.push({ x: cx, y: cy, type: 'key', bob: rng() * 6 });
         else if (ch === 'H') pickups.push({ x: cx, y: cy, type: 'med', bob: rng() * 6 });
         else if (ch === 'S') pickups.push({ x: cx, y: cy, type: 'shotgun', bob: rng() * 6 });
         else if (ch === 'M') pickups.push({ x: cx, y: cy, type: 'smg', bob: rng() * 6 });
@@ -435,7 +484,7 @@
       x: start.x, y: start.y, r: PLAYER_R, angle: 0,
       hp: MAX_HP, ammo: MAG_SIZE, reload: 0, fireCd: 0, inv: 0,
       muzzle: 0, flashlight: true, walk: 0, recoil: 0,
-      weapon: 'pistol', shells: startLoadout.shells, smg: startLoadout.smg,
+      weapon: 'pistol', shells: startLoadout.shells, smg: startLoadout.smg, keys: 0,
     };
     cam = { x: clamp(player.x - W / 2, 0, MW * T - W), y: clamp(player.y - H / 2, 0, MH * T - H) };
     stats = { kills: 0, total: zombies.length, shots: 0, hits: 0, time: 0 };
@@ -474,6 +523,14 @@
         home: { x, y }, roared: false, shirt: '#eef3f4', skin: '#c9d3c0', arm: '#c9d3c0', bandage: false,
         pounce: null, pT: 0, pdx: 1, pdy: 0, pounceHit: false, pounceCd: 1.2,
       });
+    } else if (bossType === 'headmaster') {
+      Object.assign(z, {
+        boss: true, bossType, bossName: 'The Headmaster', leash: Infinity,
+        r: HM_R, hp: 1, maxHp: 1, speed: HM_SPEED, reachBonus: HM_REACH,
+        damage: 1, windupTime: 0.4, cooldown: 0.9,
+        home: { x, y }, roared: false, stun: 0, charge: 0,
+        shirt: '#2b2f3d', skin: '#d6b896', arm: '#2b2f3d', bandage: false,
+      });
     }
     return z;
   }
@@ -502,6 +559,26 @@
       mctx.moveTo(cx, cy);
       for (let k = 0; k < 4; k++) { cx += rng() * 12 - 6; cy += rng() * 12 - 6; mctx.lineTo(cx, cy); }
       mctx.stroke();
+    }
+  }
+
+  // Scuffed wooden boards with chalk dust
+  function drawSchoolFloor(x, y, rng) {
+    const v = 112 + Math.floor(rng() * 10);
+    mctx.fillStyle = `rgb(${v},${v - 28},${v - 62})`;
+    mctx.fillRect(x * T, y * T, T, T);
+    mctx.fillStyle = 'rgba(0,0,0,0.28)';
+    for (let k = 0; k < 4; k++) mctx.fillRect(x * T, y * T + k * 8, T, 1);
+    for (let k = 0; k < 4; k++) mctx.fillRect(x * T + ((k * 13 + (x * 7 + y * 3) * 5) % 28) + 2, y * T + k * 8, 1, 8);
+    mctx.fillStyle = 'rgba(255,255,255,0.05)';
+    mctx.fillRect(x * T, y * T, T, 1);
+    for (let k = 0; k < 3; k++) {
+      mctx.fillStyle = rng() < 0.5 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.06)';
+      mctx.fillRect(x * T + rng() * T, y * T + rng() * T, 1 + rng() * 4, 1);
+    }
+    if (rng() < 0.03) {
+      mctx.fillStyle = 'rgba(100,10,10,0.5)';
+      mctx.beginPath(); mctx.ellipse(x * T + rng() * T, y * T + rng() * T, 4 + rng() * 6, 3 + rng() * 4, rng() * 3, 0, Math.PI * 2); mctx.fill();
     }
   }
 
@@ -592,6 +669,29 @@
           c.beginPath(); c.ellipse(ox + 20, oy + 16, 7, 5, 0.3, 0, Math.PI * 2); c.fill();
         }
         break;
+      case 'sdesk':
+        c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(ox + 5, oy + 8, 24, 17);
+        c.fillStyle = '#4a4f57'; c.fillRect(ox + 8, oy + 22, 16, 8);   // chair
+        c.fillStyle = '#7a5530'; c.fillRect(ox + 3, oy + 5, 26, 17);
+        c.fillStyle = '#b58a56'; c.fillRect(ox + 4, oy + 6, 24, 14);
+        c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(ox + 4, oy + 6, 24, 2);
+        if (p.r < 0.5) {
+          c.fillStyle = '#f2f0e6'; c.fillRect(ox + 8 + p.r * 10, oy + 9, 9, 7);
+          c.fillStyle = '#9aa'; c.fillRect(ox + 9 + p.r * 10, oy + 11, 6, 1);
+        } else {
+          c.fillStyle = '#2f5d8a'; c.fillRect(ox + 16 - p.r * 6, oy + 9, 8, 9);
+        }
+        break;
+      case 'locker':
+        c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(ox + 2, oy + 3, T - 1, T - 1);
+        c.fillStyle = '#3c5a7a'; c.fillRect(ox + 1, oy + 1, T - 2, T - 2);
+        c.fillStyle = '#4f7399'; c.fillRect(ox + 3, oy + 3, T - 6, T - 6);
+        c.fillStyle = 'rgba(0,0,0,0.35)';
+        for (let k = 0; k < 3; k++) c.fillRect(ox + 8, oy + 6 + k * 3, T - 16, 1);
+        c.fillRect(ox + T / 2, oy + 17, 1, T - 20);
+        c.fillStyle = '#c9d2d9'; c.fillRect(ox + T - 11, oy + 15, 3, 5);
+        if (p.r > 0.7) { c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(ox + 4, oy + T - 6, T - 8, 3); }
+        break;
       case 'iv':
         c.translate(ox + T / 2, oy + T / 2);
         c.strokeStyle = '#8aa0aa'; c.lineWidth = 2;
@@ -611,24 +711,24 @@
   }
 
   function buildMap(rng) {
-    const hosp = theme === 'hospital';
+    const hosp = theme === 'hospital', school = theme === 'school';
     mapCanvas.width = MW * T * MS;
     mapCanvas.height = MH * T * MS;
     mctx.setTransform(MS, 0, 0, MS, 0, 0);
-    mctx.fillStyle = hosp ? '#b9c4c9' : '#0c0c0e';
+    mctx.fillStyle = hosp ? '#b9c4c9' : school ? '#1a1612' : '#0c0c0e';
     mctx.fillRect(0, 0, MW * T, MH * T);
     // floor
     for (let y = 0; y < MH; y++) {
       for (let x = 0; x < MW; x++) {
         if (isWall(x, y)) continue;
-        if (hosp) drawHospitalFloor(x, y, rng); else drawBasementFloor(x, y, rng);
+        if (hosp) drawHospitalFloor(x, y, rng); else if (school) drawSchoolFloor(x, y, rng); else drawBasementFloor(x, y, rng);
       }
     }
     // wall shadows cast down/right onto floor
     for (let y = 0; y < MH; y++) {
       for (let x = 0; x < MW; x++) {
         if (isWall(x, y)) continue;
-        mctx.fillStyle = hosp ? 'rgba(40,65,80,0.28)' : 'rgba(0,0,0,0.35)';
+        mctx.fillStyle = hosp ? 'rgba(40,65,80,0.28)' : school ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.35)';
         if (isWall(x, y - 1)) mctx.fillRect(x * T, y * T, T, 7);
         if (isWall(x - 1, y)) mctx.fillRect(x * T, y * T, 5, T);
       }
@@ -653,6 +753,20 @@
           // teal skirting stripe on walls that face a room
           mctx.fillStyle = '#4f9aa6';
           if (!isWall(x, y + 1)) mctx.fillRect(x * T, y * T + T - 9, T, 4);
+        } else if (school) {
+          // institutional green paint over a dark dado
+          const v = 112 + Math.floor(rng() * 6);
+          mctx.fillStyle = `rgb(${v - 22},${v + 4},${v - 24})`;
+          mctx.fillRect(x * T, y * T, T, T);
+          mctx.fillStyle = 'rgba(0,0,0,0.1)';
+          mctx.fillRect(x * T + 15, y * T, 1, T);
+          mctx.fillStyle = '#7a6a48';
+          if (!isWall(x, y + 1)) mctx.fillRect(x * T, y * T + T - 3, T, 3);
+          if (!isWall(x, y - 1)) mctx.fillRect(x * T, y * T, T, 2);
+          if (!isWall(x + 1, y)) mctx.fillRect(x * T + T - 2, y * T, 2, T);
+          if (!isWall(x - 1, y)) mctx.fillRect(x * T, y * T, 2, T);
+          mctx.fillStyle = '#35523c';
+          if (!isWall(x, y + 1)) mctx.fillRect(x * T, y * T + T - 11, T, 7);
         } else {
           const v = 30 + Math.floor(rng() * 6);
           mctx.fillStyle = `rgb(${v},${v + 1},${v + 6})`;
@@ -876,6 +990,24 @@
   }
 
   function hitZombie(z, b) {
+    if (z.bossType === 'headmaster') {
+      // can't be killed: a hit just stuns him
+      stats.hits++;
+      z.hitT = 0.12;
+      z.chasing = true;
+      z.memory = 8;
+      const bl = Math.hypot(b.vx, b.vy);
+      z.kx += b.vx / bl * 20; z.ky += b.vy / bl * 20;
+      burst(z.x, z.y, 8, '#ffe66d', 160, 0.3);
+      if (z.stun <= 0 && ++z.charge >= HM_HITS) {
+        z.charge = 0;
+        z.stun = HM_STUN;
+        z.windup = 0;
+        sfx('stun');
+        showMessage('The Headmaster is stunned — run!');
+      }
+      return;
+    }
     z.hp--;
     z.hitT = 0.12;
     z.chasing = true;
@@ -920,6 +1052,12 @@
     decalBlood(p.x, p.y, 6);
     sfx('hurt');
     if (p.hp <= 0) { state = 'dead'; endT = 0; }
+  }
+
+  // Key levels open the exit with keys; boss levels open it when the boss dies
+  function exitSealed() {
+    const need = LEVELS[levelIndex].keys;
+    return need ? player.keys < need : zombies.some(z => z.boss);
   }
 
   function exitBossName() {
@@ -1028,6 +1166,12 @@
         sfx('pickup');
         sfx('pump');
         showMessage(`SHOTGUN — ${SHOTGUN_SHELLS} shells · Q to switch weapons`);
+      } else if (it.type === 'key') {
+        p.keys++;
+        pickups.splice(i, 1);
+        burst(it.x, it.y, 18, '#ffe27a', 150, 0.6);
+        sfx('key');
+        showMessage(`KEY ${p.keys}/${LEVELS[levelIndex].keys}`);
       } else if (it.type === 'smg') {
         p.smg += SMG_AMMO;
         p.weapon = 'smg';
@@ -1040,14 +1184,16 @@
       }
     }
 
-    const exitLocked = zombies.some(z => z.boss);
+    const exitLocked = exitSealed();
     exitLamp.rgb = exitLocked ? '255,60,50' : '90,255,140';
     if (Math.hypot(exitPos.x - p.x, exitPos.y - p.y) < 18) {
       if (!exitLocked) {
         state = 'win'; endT = 0;
         sfx('win');
       } else if (messageT < 1) {
-        showMessage(`The exit is sealed — kill ${exitBossName()} first`);
+        const need = LEVELS[levelIndex].keys;
+        showMessage(need ? `The main door is locked — ${need - p.keys} key${need - p.keys > 1 ? 's' : ''} missing`
+          : `The exit is sealed — kill ${exitBossName()} first`);
       }
     }
 
@@ -1107,6 +1253,8 @@
           sees = false; z.chasing = false; z.memory = 0;
         }
         if (z.pounceCd > 0) z.pounceCd -= dt;
+        if (z.charge > 0) z.charge = Math.max(0, z.charge - HM_DECAY * dt);
+        if (z.bossType === 'headmaster' && z.roared) { z.chasing = true; z.memory = 5; }  // never gives up
         if ((sees || z.chasing) && !z.roared) {
           z.roared = true;
           sfx(z.bossType === 'nurse' ? 'shriek' : 'roar', 1);
@@ -1121,7 +1269,7 @@
       }
 
       let vx = 0, vy = 0, spd = 0;
-      const reach = z.r + p.r + ATTACK_REACH;
+      const reach = z.r + p.r + ATTACK_REACH + (z.reachBonus || 0);
       if (z.pounce === 'wind') {
         // crouch and aim; the aim line locks for the last 0.3s so a quick sidestep works
         z.pT -= dt;
@@ -1144,6 +1292,8 @@
       } else if (z.pounce === 'recover') {
         z.pT -= dt;               // sprawled on the floor: free shots
         if (z.pT <= 0) z.pounce = null;
+      } else if (z.stun > 0) {
+        z.stun -= dt;             // out cold on his feet: no moving, no swinging
       } else if (z.windup > 0) {
         z.windup -= dt;
         z.angle = Math.atan2(dy, dx);
@@ -1206,7 +1356,7 @@
       z.groanT -= dt;
       if (z.groanT <= 0) {
         z.groanT = rand(3, 9);
-        const groan = z.bossType === 'bloater' ? 'bossgroan' : z.bossType === 'nurse' ? 'nursegroan' : 'groan';
+        const groan = z.bossType === 'bloater' || z.bossType === 'headmaster' ? 'bossgroan' : z.bossType === 'nurse' ? 'nursegroan' : 'groan';
         if (d < 500) sfx(groan, clamp(1 - d / 500, 0.1, 1) * (z.chasing ? 1.4 : 0.8));
       }
     }
@@ -1296,8 +1446,8 @@
   }
 
   function drawZombie(z) {
-    const nurse = z.bossType === 'nurse';
-    const winding = z.pounce === 'wind', leaping = z.pounce === 'leap', down = z.pounce === 'recover';
+    const nurse = z.bossType === 'nurse', head = z.bossType === 'headmaster';
+    const winding = z.pounce === 'wind', leaping = z.pounce === 'leap', down = z.pounce === 'recover' || z.stun > 0;
     ctx.save();
     ctx.translate(z.x, z.y);
     const k = z.r / ZOMBIE_R * (winding ? 0.9 : 1);
@@ -1335,9 +1485,28 @@
       ctx.fillStyle = '#9aa7ad'; ctx.fillRect(sx + 10, 8.5, 6, 1);
       ctx.fillRect(sx - 2, 7, 2, 4);
     }
+    if (head) {
+      // wooden ruler: held low, raised on the windup, slashed across on the swing
+      ctx.save();
+      ctx.translate(15 + lunge - sway, 8.5);
+      ctx.rotate(z.swing > 0 ? 1.0 : z.windup > 0 ? -1.1 : 0.15);
+      ctx.fillStyle = '#d9b25e'; ctx.fillRect(0, -1.5, 30, 3);
+      ctx.fillStyle = '#7a5a1e';
+      for (let i = 4; i < 30; i += 3) ctx.fillRect(i, -1.5, 1, i % 6 === 1 ? 2 : 1);
+      ctx.restore();
+    }
     ctx.fillStyle = z.shirt;
     ctx.beginPath(); ctx.ellipse(-1, 0, 9, 13, 0, 0, Math.PI * 2); ctx.fill();
-    if (z.bossType === 'bloater') {
+    if (head) {
+      // white collar and a red tie
+      ctx.fillStyle = '#e8e8e8'; ctx.fillRect(3, -4, 3, 8);
+      ctx.fillStyle = '#b91c1c'; ctx.fillRect(2, -1, 8, 2);
+      if (z.windup > 0) {
+        ctx.strokeStyle = 'rgba(255,60,40,0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.stroke();
+      }
+    } else if (z.bossType === 'bloater') {
       // bulging gut with pustules
       ctx.fillStyle = '#a3b06a';
       ctx.beginPath(); ctx.ellipse(5, 0, 9, 11, 0, 0, Math.PI * 2); ctx.fill();
@@ -1377,7 +1546,7 @@
     }
     ctx.fillStyle = z.skin;
     ctx.beginPath(); ctx.arc(1, 0, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = nurse ? '#2d2118' : '#4e6a3a';
+    ctx.fillStyle = nurse ? '#2d2118' : head ? '#b9bec6' : '#4e6a3a';
     ctx.beginPath(); ctx.arc(-1, -2, 3, 0, Math.PI * 2); ctx.fill();
     if (nurse) {
       // nurse's cap with a red cross
@@ -1385,6 +1554,12 @@
       ctx.beginPath(); ctx.ellipse(-1.5, 0, 4.5, 6.5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#d32f2f';
       ctx.fillRect(-3.3, -0.8, 3.6, 1.6); ctx.fillRect(-2.3, -1.8, 1.6, 3.6);
+    } else if (head) {
+      // grey hair and round glasses
+      ctx.fillStyle = '#b9bec6';
+      ctx.beginPath(); ctx.ellipse(-2.5, 0, 4, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#1b1b1f'; ctx.lineWidth = 1;
+      for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(5, 3 * s, 2, 0, Math.PI * 2); ctx.stroke(); }
     } else if (z.bandage) {
       ctx.fillStyle = '#f4f4ee';
       ctx.fillRect(-1, -6.5, 3.5, 13);
@@ -1408,6 +1583,16 @@
       }
     }
 
+    if (head) {
+      // no health to show: just how long the stun has left
+      if (z.stun > 0 || z.charge > 0) {
+        const sw = 44, sx = z.x - sw / 2, sy = z.y - z.r - 10;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(sx - 1, sy - 1, sw + 2, 7);
+        ctx.fillStyle = z.stun > 0 ? '#facc15' : '#f97316';
+        ctx.fillRect(sx, sy, sw * (z.stun > 0 ? z.stun / HM_STUN : z.charge / HM_HITS), 5);
+      }
+      return;
+    }
     // health bar, drawn unrotated above the head (before lighting, so it hides in the dark)
     const bw = z.boss ? 44 : 22, bh = z.boss ? 5 : 4, bx = z.x - bw / 2, by = z.y - z.r - 10;
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
@@ -1511,7 +1696,7 @@
     // exit hatch
     ctx.save();
     ctx.translate(exitPos.x, exitPos.y);
-    const locked = zombies.some(z => z.boss);
+    const locked = exitSealed();
     const exitCol = locked ? '#ff4a3c' : '#3cff7a';
     ctx.fillStyle = locked ? '#3a1212' : '#123a1e';
     ctx.fillRect(-15, -15, 30, 30);
@@ -1560,6 +1745,19 @@
         ctx.fillRect(2, -3, 7, 6);
         ctx.fillStyle = '#1d1f24';
         ctx.fillRect(-5, -2, 20, 4);
+        ctx.restore();
+        continue;
+      }
+      if (it.type === 'key') {
+        ctx.fillStyle = radial(ctx, it.x, it.y, 34, [[0, 'rgba(255,226,122,0.5)'], [1, 'rgba(255,226,122,0)']]);
+        ctx.beginPath(); ctx.arc(it.x, it.y, 34, 0, Math.PI * 2); ctx.fill();
+        ctx.save();
+        ctx.translate(it.x, it.y + b);
+        ctx.rotate(-0.6);
+        ctx.strokeStyle = '#f2c94c'; ctx.fillStyle = '#f2c94c'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(-8, 0, 5, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillRect(-3, -1.5, 16, 3);
+        ctx.fillRect(8, 1, 3, 5); ctx.fillRect(12, 1, 3, 4);
         ctx.restore();
         continue;
       }
@@ -1750,19 +1948,28 @@
       ctx.fillText(boss.bossName.toUpperCase(), W / 2, by - 12);
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.fillRect(bx, by + 4, bw, 10);
-      ctx.fillStyle = '#b91c1c';
-      ctx.fillRect(bx, by + 4, bw * boss.hp / boss.maxHp, 10);
+      if (boss.bossType === 'headmaster') {
+        // unkillable: the bar fills as you wear him down, then drains while he's stunned
+        ctx.fillStyle = boss.stun > 0 ? '#facc15' : '#f97316';
+        ctx.fillRect(bx, by + 4, bw * (boss.stun > 0 ? boss.stun / HM_STUN : boss.charge / HM_HITS), 10);
+      } else {
+        ctx.fillStyle = '#b91c1c';
+        ctx.fillRect(bx, by + 4, bw * boss.hp / boss.maxHp, 10);
+      }
     }
 
     // kills / time
     panel(W - 184, 14, 170, 54);
     ctx.textAlign = 'left';
     ctx.fillStyle = '#bbb';
-    ctx.fillText('KILLS', W - 174, 22);
+    const keysNeeded = LEVELS[levelIndex].keys;
+    ctx.fillText(keysNeeded ? 'KEYS' : 'KILLS', W - 174, 22);
     ctx.fillText('TIME', W - 174, 44);
     ctx.textAlign = 'right';
     ctx.fillStyle = '#eee';
-    ctx.fillText(`${stats.kills} / ${stats.total}`, W - 24, 22);
+    ctx.fillStyle = keysNeeded && p.keys >= keysNeeded ? '#f2c94c' : '#eee';
+    ctx.fillText(keysNeeded ? `${p.keys} / ${keysNeeded}` : `${stats.kills} / ${stats.total}`, W - 24, 22);
+    ctx.fillStyle = '#eee';
     ctx.fillText(fmtTime(stats.time), W - 24, 44);
 
     ctx.textAlign = 'left';
@@ -1815,15 +2022,20 @@
     } else if (state === 'dead') {
       overlay(Math.min(0.75, endT));
       title('YOU DIED', '#c62828');
-      sub(`Kills ${stats.kills}/${stats.total}  ·  Time ${fmtTime(stats.time)}`, 0, '#bbb');
+      sub(`${killLine()}  ·  Time ${fmtTime(stats.time)}`, 0, '#bbb');
       if (endT > 0.8) blink('PRESS SPACE TO RETRY', H / 2 + 70);
     } else if (state === 'win') {
       overlay(Math.min(0.75, endT));
       title('LEVEL CLEARED', '#3cff7a');
       const acc = stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0;
-      sub(`Kills ${stats.kills}/${stats.total}  ·  Time ${fmtTime(stats.time)}  ·  Accuracy ${acc}%  ·  Health ${p.hp}/${MAX_HP}`, 0, '#ddd');
+      sub(`${killLine()}  ·  Time ${fmtTime(stats.time)}  ·  Accuracy ${acc}%  ·  Health ${p.hp}/${MAX_HP}`, 0, '#ddd');
       if (endT > 0.8) blink(levelIndex + 1 < LEVELS.length ? 'PRESS SPACE FOR NEXT LEVEL' : 'MORE LEVELS COMING · PRESS SPACE TO REPLAY', H / 2 + 70);
     }
+  }
+
+  function killLine() {
+    const need = LEVELS[levelIndex].keys;
+    return need ? `Keys ${player.keys}/${need}` : `Kills ${stats.kills}/${stats.total}`;
   }
 
   function panel(x, y, w, h) {
