@@ -50,6 +50,19 @@
   const FIRE_DELAY = 0.18;
   const BULLET_SPEED = 950;
   const BULLET_RANGE = 700;
+  const START_RESERVE = 16;  // spare pistol rounds at the start (the pistol runs dry)
+  // every gun has a magazine, a reserve pool and a reload time
+  const MAGS = { pistol: MAG_SIZE, shotgun: 6, smg: 50 };
+  const RELOADS = { pistol: RELOAD_TIME, shotgun: 1.9, smg: 2.1 };
+  const GUN_NAMES = { pistol: 'PISTOL', shotgun: 'SHOTGUN', smg: 'SMG' };
+
+  // Machete (starting weapon, never runs out)
+  const MACHETE_DELAY = 0.42;
+  const MACHETE_REACH = 40;
+  const MACHETE_ARC = 0.9;   // half-angle in radians
+
+  // Ammo boxes scattered over each level: gun -> [amount, how many]
+  const AMMO_BOXES = { pistol: [8, 3], shotgun: [6, 2], smg: [30, 2] };
 
   // SMG (found in level 2, no reload)
   const SMG_AMMO = 90;
@@ -284,6 +297,7 @@
     if (!actx) return;
     switch (name) {
       case 'shot': noiseHit(2200, 0.5, 0.18); tone('sine', 140, 40, 0.5, 0.12); break;
+      case 'swing': noiseHit(3500, 0.25, 0.12); tone('sine', 900, 300, 0.08, 0.1); break;
       case 'empty': tone('square', 1800, 1500, 0.05, 0.03); break;
       case 'magout': tone('square', 900, 600, 0.06, 0.04); noiseHit(3000, 0.08, 0.05, 0.05); break;
       case 'magin': tone('square', 700, 1100, 0.08, 0.04); tone('square', 1300, 1300, 0.06, 0.03, 0.08); break;
@@ -422,8 +436,13 @@
   }
 
   // guns carried into the current level; a death restarts with the same loadout
-  let startLoadout = { shells: 0, smg: 0 };
-  function loadLevel(i, loadout = { shells: 0, smg: 0 }) {
+  const freshLoadout = () => ({
+    has: { pistol: true, shotgun: false, smg: false },
+    mag: { pistol: MAG_SIZE, shotgun: 0, smg: 0 },
+    res: { pistol: START_RESERVE, shotgun: 0, smg: 0 },
+  });
+  let startLoadout = freshLoadout();
+  function loadLevel(i, loadout = freshLoadout()) {
     startLoadout = loadout;
     levelIndex = i;
     const L = LEVELS[i];
@@ -482,15 +501,39 @@
     buildMap(rng);
     player = {
       x: start.x, y: start.y, r: PLAYER_R, angle: 0,
-      hp: MAX_HP, ammo: MAG_SIZE, reload: 0, fireCd: 0, inv: 0,
-      muzzle: 0, flashlight: true, walk: 0, recoil: 0,
-      weapon: 'pistol', shells: startLoadout.shells, smg: startLoadout.smg, keys: 0,
+      hp: MAX_HP, reload: 0, fireCd: 0, inv: 0,
+      muzzle: 0, flashlight: true, walk: 0, recoil: 0, swing: 0,
+      weapon: 'pistol', keys: 0,
+      has: { ...startLoadout.has }, mag: { ...startLoadout.mag }, res: { ...startLoadout.res },
     };
     cam = { x: clamp(player.x - W / 2, 0, MW * T - W), y: clamp(player.y - H / 2, 0, MH * T - H) };
     stats = { kills: 0, total: zombies.length, shots: 0, hits: 0, time: 0 };
     shake = 0; hurtFlash = 0; bannerT = 3.5; messageT = 0;
     fireQueued = false;
     computeFlow();
+    scatterAmmo();
+  }
+
+  // drop ammo boxes on random reachable floor tiles, away from the start and the exit
+  function scatterAmmo() {
+    const spots = [];
+    for (let y = 0; y < MH; y++) {
+      for (let x = 0; x < MW; x++) {
+        const cx = x * T + T / 2, cy = y * T + T / 2;
+        if (grid[y * MW + x] || flow[y * MW + x] < 0) continue;
+        if (Math.hypot(cx - player.x, cy - player.y) < 150 || Math.hypot(cx - exitPos.x, cy - exitPos.y) < 60) continue;
+        if (pickups.some(it => Math.hypot(cx - it.x, cy - it.y) < 50)) continue;
+        spots.push({ x: cx, y: cy });
+      }
+    }
+    const hasGun = { pistol: true, shotgun: player.has.shotgun || pickups.some(it => it.type === 'shotgun'), smg: player.has.smg || pickups.some(it => it.type === 'smg') };
+    for (const gun in AMMO_BOXES) {
+      if (!hasGun[gun]) continue;
+      for (let n = 0; n < AMMO_BOXES[gun][1] && spots.length; n++) {
+        const [spot] = spots.splice((Math.random() * spots.length) | 0, 1);
+        pickups.push({ x: spot.x, y: spot.y, type: 'ammo', gun, bob: Math.random() * 6 });
+      }
+    }
   }
 
   function makeZombie(x, y, bossType = null) {
@@ -885,28 +928,48 @@
     else if (state === 'dead' && endT > 0.8) { loadLevel(levelIndex, startLoadout); state = 'play'; }
     else if (state === 'win' && endT > 0.8) {
       const next = levelIndex + 1 < LEVELS.length;
-      loadLevel(next ? levelIndex + 1 : 0, next ? { shells: player.shells, smg: player.smg } : undefined);
+      loadLevel(next ? levelIndex + 1 : 0, next ? { has: player.has, mag: player.mag, res: player.res } : undefined);
       state = 'play';
     }
   }
 
-  function startReload() {
+  function fillMag(g) {
     const p = player;
-    if (p.weapon !== 'pistol' || p.reload > 0 || p.ammo === MAG_SIZE) return;
-    p.reload = RELOAD_TIME;
+    const take = Math.min(MAGS[g] - p.mag[g], p.res[g]);
+    p.mag[g] += take; p.res[g] -= take;
+  }
+
+  function startReload() {
+    const p = player, g = p.weapon;
+    if (g === 'machete' || p.reload > 0 || p.mag[g] === MAGS[g] || p.res[g] <= 0) return;
+    p.reload = RELOADS[g];
     sfx('magout');
+  }
+
+  function hasAmmo(g) { return player.has[g] && player.mag[g] + player.res[g] > 0; }
+
+  // best gun to fall back to when the current one is dry
+  function fallbackWeapon() {
+    return ['pistol', 'shotgun', 'smg'].find(hasAmmo) || 'machete';
   }
 
   function switchWeapon() {
     const p = player;
-    const owned = ['pistol'];
-    if (p.shells > 0) owned.push('shotgun');
-    if (p.smg > 0) owned.push('smg');
+    const owned = ['machete', 'pistol', 'shotgun', 'smg'].filter(g => g === 'machete' || hasAmmo(g));
     if (owned.length < 2) return;
     p.weapon = owned[(owned.indexOf(p.weapon) + 1) % owned.length];
     p.reload = 0;
     p.fireCd = 0.25;
-    sfx(p.weapon === 'pistol' ? 'magin' : 'pump');
+    sfx(p.weapon === 'pistol' ? 'magin' : p.weapon === 'machete' ? 'swing' : 'pump');
+  }
+
+  // after a shot or a dry click: reload if possible, else fall back to another weapon
+  function handleEmpty() {
+    const p = player, g = p.weapon;
+    if (p.mag[g] > 0 || g === 'machete') return;
+    if (p.res[g] > 0) { startReload(); return; }
+    p.weapon = fallbackWeapon();
+    showMessage(p.weapon === 'machete' ? `Out of ammo — draw the machete` : `${GUN_NAMES[g]} empty`);
   }
 
   function fireBullet(a, range) {
@@ -917,12 +980,34 @@
     bullets.push({ x: bx, y: by, px: bx, py: by, vx: dx * BULLET_SPEED, vy: dy * BULLET_SPEED, d: 0, range });
   }
 
+  function swingMachete() {
+    const p = player;
+    p.fireCd = MACHETE_DELAY;
+    p.swing = 0.22;
+    sfx('swing');
+    let best = null, bestD = Infinity;
+    for (const z of zombies) {
+      const d = Math.hypot(z.x - p.x, z.y - p.y);
+      if (d > MACHETE_REACH + z.r || d >= bestD) continue;
+      const diff = Math.abs(Math.atan2(Math.sin(Math.atan2(z.y - p.y, z.x - p.x) - p.angle), Math.cos(Math.atan2(z.y - p.y, z.x - p.x) - p.angle)));
+      if (diff > MACHETE_ARC || !los(p.x, p.y, z.x, z.y)) continue;
+      best = z; bestD = d;
+    }
+    stats.shots++;
+    if (best) {
+      shake = Math.max(shake, 3);
+      hitZombie(best, { vx: Math.cos(p.angle) * BULLET_SPEED, vy: Math.sin(p.angle) * BULLET_SPEED });
+    }
+  }
+
   function shoot() {
     const p = player;
     if (p.reload > 0 || p.fireCd > 0) return;
+    if (p.weapon === 'machete') { swingMachete(); return; }
+    if (p.mag[p.weapon] <= 0) { sfx('empty'); handleEmpty(); return; }
     let a = p.angle;
     if (p.weapon === 'shotgun') {
-      p.shells--;
+      p.mag.shotgun--;
       p.fireCd = SHOTGUN_DELAY;
       p.muzzle = 0.09;
       for (let i = 0; i < SHOTGUN_PELLETS; i++) {
@@ -933,7 +1018,7 @@
       sfx('pump');
       a += Math.PI; // shells eject backward-ish
     } else if (p.weapon === 'smg') {
-      p.smg--;
+      p.mag.smg--;
       p.fireCd = SMG_DELAY;
       p.muzzle = 0.05;
       a += rand(-SMG_SPREAD, SMG_SPREAD);
@@ -941,8 +1026,8 @@
       shake = Math.max(shake, 2);
       sfx('shot');
     } else {
-      if (p.ammo <= 0) { sfx('empty'); startReload(); return; }
-      p.ammo--;
+      if (p.mag.pistol <= 0) { sfx('empty'); handleEmpty(); return; }
+      p.mag.pistol--;
       p.fireCd = FIRE_DELAY;
       p.muzzle = 0.06;
       a += rand(-0.025, 0.025);
@@ -966,15 +1051,7 @@
         z.memory = Math.max(z.memory, 6);
       }
     }
-    if (p.weapon === 'shotgun' && p.shells === 0) {
-      p.weapon = 'pistol';
-      showMessage('Out of shells — back to the pistol');
-    }
-    if (p.weapon === 'smg' && p.smg === 0) {
-      p.weapon = p.shells > 0 ? 'shotgun' : 'pistol';
-      showMessage('SMG empty');
-    }
-    if (p.weapon === 'pistol' && p.ammo === 0) startReload();
+    handleEmpty();
   }
 
   function showMessage(text) {
@@ -1131,6 +1208,7 @@
     p.fireCd -= dt;
     p.inv -= dt;
     p.muzzle -= dt;
+    p.swing = Math.max(0, p.swing - dt);
     p.recoil = Math.max(0, p.recoil - dt * 8);
     // a press during cooldown fires as soon as the gun is ready
     if (fireQueued && p.fireCd <= 0 && p.reload <= 0) { fireQueued = false; shoot(); }
@@ -1140,7 +1218,11 @@
     messageT -= dt;
     if (p.reload > 0) {
       p.reload -= dt;
-      if (p.reload <= 0) { p.reload = 0; p.ammo = MAG_SIZE; sfx('magin'); }
+      if (p.reload <= 0) {
+        p.reload = 0;
+        fillMag(p.weapon);
+        sfx('magin');
+      }
     }
 
     computeFlow();
@@ -1158,7 +1240,9 @@
         burst(it.x, it.y, 14, '#7dff9a', 120, 0.5);
         sfx('pickup');
       } else if (it.type === 'shotgun') {
-        p.shells += SHOTGUN_SHELLS;
+        p.res.shotgun += SHOTGUN_SHELLS;
+        p.has.shotgun = true;
+        fillMag('shotgun');
         p.weapon = 'shotgun';
         p.reload = 0;
         pickups.splice(i, 1);
@@ -1172,8 +1256,18 @@
         burst(it.x, it.y, 18, '#ffe27a', 150, 0.6);
         sfx('key');
         showMessage(`KEY ${p.keys}/${LEVELS[levelIndex].keys}`);
+      } else if (it.type === 'ammo') {
+        const n = AMMO_BOXES[it.gun][0];
+        p.res[it.gun] += n;
+        if (p.mag[it.gun] === 0 && p.weapon === it.gun) startReload();
+        pickups.splice(i, 1);
+        burst(it.x, it.y, 10, '#ffcf6a', 110, 0.4);
+        sfx('pickup');
+        showMessage(`+${n} ${it.gun === 'pistol' ? 'pistol rounds' : it.gun === 'shotgun' ? 'shells' : 'SMG rounds'}`);
       } else if (it.type === 'smg') {
-        p.smg += SMG_AMMO;
+        p.res.smg += SMG_AMMO;
+        p.has.smg = true;
+        fillMag('smg');
         p.weapon = 'smg';
         p.reload = 0;
         pickups.splice(i, 1);
@@ -1406,7 +1500,22 @@
     if (p.inv > 0 && Math.floor(p.inv * 20) % 2 === 0) ctx.globalAlpha = 0.5;
     const rc = -p.recoil * 3;
     ctx.fillStyle = '#d9a97e';
-    if (p.weapon === 'shotgun') {
+    if (p.weapon === 'machete') {
+      const sw = p.swing > 0 ? (1 - p.swing / 0.22) * 2.2 - 1.1 : 0.5;  // sweep from left to right
+      ctx.fillRect(2, 2, 10, 4);
+      ctx.save();
+      ctx.translate(8, 4);
+      ctx.rotate(sw - 0.5);
+      ctx.fillStyle = '#4a2f18';
+      ctx.fillRect(0, -2, 8, 4);
+      ctx.fillStyle = '#c9d1d9';
+      ctx.beginPath();
+      ctx.moveTo(8, -2.5); ctx.lineTo(30, -3); ctx.lineTo(34, 2); ctx.lineTo(8, 2.5);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#d9a97e';
+      ctx.fillRect(2, -9, 8, 4);
+    } else if (p.weapon === 'shotgun') {
       ctx.fillRect(2 + rc, 2, 10, 4);
       ctx.fillRect(4 + rc, -7, 16, 4);
       ctx.fillStyle = '#5a3a1e';
@@ -1748,6 +1857,19 @@
         ctx.restore();
         continue;
       }
+      if (it.type === 'ammo') {
+        ctx.fillStyle = radial(ctx, it.x, it.y, 20, [[0, 'rgba(255,200,90,0.3)'], [1, 'rgba(255,200,90,0)']]);
+        ctx.beginPath(); ctx.arc(it.x, it.y, 20, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillRect(it.x - 8, it.y - 4, 16, 12);
+        ctx.fillStyle = it.gun === 'shotgun' ? '#8c2a1f' : it.gun === 'smg' ? '#4a5160' : '#6b5a2a';
+        ctx.fillRect(it.x - 8, it.y - 6 + b, 16, 12);
+        ctx.fillStyle = '#d8aa48';
+        ctx.fillRect(it.x - 6, it.y - 3 + b, 3, 6);
+        ctx.fillRect(it.x - 1, it.y - 3 + b, 3, 6);
+        ctx.fillRect(it.x + 4, it.y - 3 + b, 3, 6);
+        continue;
+      }
       if (it.type === 'key') {
         ctx.fillStyle = radial(ctx, it.x, it.y, 34, [[0, 'rgba(255,226,122,0.5)'], [1, 'rgba(255,226,122,0)']]);
         ctx.beginPath(); ctx.arc(it.x, it.y, 34, 0, Math.PI * 2); ctx.fill();
@@ -1887,53 +2009,52 @@
     panel(W - 214, H - 64, 200, 50);
     ctx.textAlign = 'left';
     ctx.fillStyle = '#bbb';
-    if (p.weapon === 'shotgun') {
-      ctx.fillText('SHOTGUN', W - 204, H - 56);
+    const g = p.weapon;
+    if (g === 'machete') {
+      ctx.fillText('MACHETE', W - 204, H - 56);
       ctx.textAlign = 'right';
       ctx.fillStyle = '#eee';
-      ctx.fillText(`${p.shells} / ${SHOTGUN_SHELLS}`, W - 24, H - 56);
-      for (let i = 0; i < SHOTGUN_SHELLS; i++) {
-        const bx = W - 204 + i * 15;
-        ctx.fillStyle = i < p.shells ? '#c0392b' : 'rgba(255,255,255,0.1)';
-        ctx.fillRect(bx, H - 38, 9, 16);
-        ctx.fillStyle = i < p.shells ? '#d8aa48' : 'rgba(255,255,255,0.1)';
-        ctx.fillRect(bx, H - 26, 9, 4);
-      }
-    } else if (p.weapon === 'smg') {
-      ctx.fillText('SMG', W - 204, H - 56);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#eee';
-      ctx.fillText(`${p.smg}`, W - 24, H - 56);
-      for (let i = 0; i < 30; i++) {
-        const bx = W - 204 + i * 6.5;
-        ctx.fillStyle = i < p.smg ? '#d8aa48' : 'rgba(255,255,255,0.1)';
-        ctx.fillRect(bx, H - 38, 4, 14);
-      }
+      ctx.fillText('∞', W - 24, H - 56);
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText('Space — swing', W - 24, H - 34);
     } else {
-      ctx.fillText('PISTOL', W - 204, H - 56);
+      ctx.fillText(GUN_NAMES[g], W - 204, H - 56);
       ctx.textAlign = 'right';
-      ctx.fillStyle = p.ammo === 0 ? '#ef4444' : '#eee';
-      ctx.fillText(`${p.ammo} / ${MAG_SIZE}`, W - 24, H - 56);
-      for (let i = 0; i < MAG_SIZE; i++) {
-        const bx = W - 204 + i * 22;
-        ctx.fillStyle = i < p.ammo ? '#d8aa48' : 'rgba(255,255,255,0.1)';
-        ctx.fillRect(bx, H - 38, 8, 16);
-        ctx.beginPath(); ctx.arc(bx + 4, H - 38, 4, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = p.mag[g] === 0 ? '#ef4444' : '#eee';
+      ctx.fillText(`${p.mag[g]} / ${p.res[g]}`, W - 24, H - 56);
+      const n = MAGS[g], step = 184 / n;
+      for (let i = 0; i < n; i++) {
+        const bx = W - 204 + i * step, on = i < p.mag[g];
+        if (g === 'shotgun') {
+          ctx.fillStyle = on ? '#c0392b' : 'rgba(255,255,255,0.1)';
+          ctx.fillRect(bx, H - 38, step - 6, 16);
+          ctx.fillStyle = on ? '#d8aa48' : 'rgba(255,255,255,0.1)';
+          ctx.fillRect(bx, H - 26, step - 6, 4);
+        } else if (g === 'smg') {
+          ctx.fillStyle = on ? '#d8aa48' : 'rgba(255,255,255,0.1)';
+          ctx.fillRect(bx, H - 38, Math.max(2, step - 1.5), 14);
+        } else {
+          ctx.fillStyle = on ? '#d8aa48' : 'rgba(255,255,255,0.1)';
+          ctx.fillRect(bx, H - 38, 8, 16);
+          ctx.beginPath(); ctx.arc(bx + 4, H - 38, 4, Math.PI, 0); ctx.fill();
+        }
       }
-      if (p.shells > 0) {
+    }
+    {
+      let row = 80;
+      for (const o of ['pistol', 'shotgun', 'smg']) {
+        if (o === g || !hasAmmo(o)) continue;
+        ctx.textAlign = 'right';
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        ctx.fillText(`Q — shotgun (${p.shells})`, W - 24, H - 80);
-      }
-      if (p.smg > 0) {
-        ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        ctx.fillText(`Q — smg (${p.smg})`, W - 24, p.shells > 0 ? H - 96 : H - 80);
+        ctx.fillText(`Q — ${o} (${p.mag[o] + p.res[o]})`, W - 24, H - row);
+        row += 16;
       }
     }
     if (p.reload > 0) {
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
       ctx.fillRect(W - 210, H - 42, 192, 24);
       ctx.fillStyle = '#facc15';
-      ctx.fillRect(W - 206, H - 26, 184 * (1 - p.reload / RELOAD_TIME), 4);
+      ctx.fillRect(W - 206, H - 26, 184 * (1 - p.reload / RELOADS[p.weapon]), 4);
       ctx.textAlign = 'center';
       ctx.fillText('RELOADING', W - 114, H - 40);
     }
@@ -2009,8 +2130,8 @@
       lines([
         '↑ / ↓      — walk forward / back',
         '← / →      — turn',
-        'Space      — shoot (2 pistol hits kills a zombie)',
-        'R          — reload pistol (8 rounds per mag)',
+        'Space      — shoot / swing machete (2 hits kills a zombie)',
+        'R          — reload (pistol 8, shotgun 6, SMG 50 per mag; ammo is limited)',
         'Q          — cycle weapons (shotgun and SMG are hidden in the levels)',
         'F          — flashlight (zombies spot you easier with it on)',
       ], H / 2 + 5);
