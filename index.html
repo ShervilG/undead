@@ -51,6 +51,11 @@
   const BULLET_SPEED = 950;
   const BULLET_RANGE = 700;
 
+  // SMG (found in level 2, no reload)
+  const SMG_AMMO = 90;
+  const SMG_DELAY = 0.075;
+  const SMG_SPREAD = 0.07;
+
   // Shotgun (found in the level, no reload)
   const SHOTGUN_SHELLS = 12;
   const SHOTGUN_DELAY = 0.75;
@@ -94,7 +99,7 @@
   const FLASH_RANGE = 290;
   const FLASH_HALF = 0.42;
 
-  // Legend: # wall, . floor, P player, Z zombie, L lamp, F flickering lamp, H medkit, S shotgun,
+  // Legend: # wall, . floor, P player, Z zombie, L lamp, F flickering lamp, H medkit, S shotgun, M smg,
   //   B boss (Bloater), N boss (Nurse), E exit
   //   hospital props: b bed, d desk, c cabinet, w wheelchair, o operating table (solid);
   //   i IV stand, X red-cross floor mark (decor, walkable)
@@ -107,24 +112,24 @@
       lampR: LAMP_R, lampRgb: '255,190,110', lampKind: 'bulb', flickerRgb: '200,220,255',
       map: [
         '####################################',
-        '#.....#.........#..................#',
+        '#.....#.........#.....Z............#',
         '#..L..#.........#..........Z.......#',
-        '#.....#..F.Z....#....########......#',
+        '#.....#..F......#....########......#',
         '#..P.................#......#..L...#',
         '#.....#.........#....#..Z...#......#',
         '###.#######.#####....#..H...#......#',
         '#.....#.........#....###.####......#',
         '#..F..#....L.......................#',
-        '#..Z............#..................#',
-        '#.....#.........#..................#',
+        '#...............#..................#',
+        '#.....#.........#...........Z......#',
         '###.#######.###########.#######.####',
         '#.....#.........#..................#',
         '#...........Z...#..####...Z..####..#',
-        '#..Z..#....L.......####......####..#',
+        '#.....#....L.......####......####..#',
         '#.....#.........#..####....F.####..#',
         '###.#######.#####..............L...#',
         '#.....#.........#....L...####.######',
-        '#..F..#.........#........#.........#',
+        '#..F..#.......Z.#........#.........#',
         '#.H...#..............Z...#..B......#',
         '#..........Z....#........#.........#',
         '#.....#...S..L..#........#.......E.#',
@@ -133,36 +138,36 @@
       ],
     },
     {
-      name: 'Level 2 — St. Mercy Hospital',
+      name: 'Level 2 — Nortis Hospital',
       hint: 'The Head Nurse guards the EXIT — put her down',
       theme: 'hospital',
-      darkness: 0.16,
-      lampR: 235, lampRgb: '225,240,255', lampKind: 'tube', flickerRgb: '225,240,255',
+      darkness: 0.5,
+      lampR: 190, lampRgb: '225,240,255', lampKind: 'tube', flickerRgb: '225,240,255',
       map: [
         '############################################',
         '#.bibibib.#.cc.cc.c.#.bibibib.#.cc.........#',
         '#.........#.........#.........#..........E.#',
-        '#..L......#..Z....H.#..L......#..L..N...L..#',
+        '#..F......#..Z....H.#..F......#..L..N...L..#',
         '#..Z......#..L..F...#.wZ....w.#...i....i...#',
         '#...................#.........#...oo..oo...#',
         '#.bi...ib.#..ddddd............#...........c#',
         '#.........#.........#......Z..#...........c#',
         '#......Z..#......Z..#.bi...ib.#..Z.........#',
-        '#......L..#......L..#......L..#..L......L..#',
+        '#......F..#......F..#......L..#..L......L..#',
         '#.........#.c.....c.#.........#............#',
         '####..########..########..##########..######',
-        '#.....L.............L......F...Z.....X.....#',
-        '#.............F......Z..........L.....F..L.#',
+        '#.....F.............F......F...Z.....X.....#',
+        '#.............F......Z..........L.....F..F.#',
         '####..########..########..##########..######',
         '#.......H.#.........#.........#............#',
-        '#.w.......#.........#.bi...ib.#..L......L..#',
-        '#..L...ddd#..L......#..L..Z...#............#',
+        '#.w.......#.........#.bi...ib.#..F......L..#',
+        '#..F...ddd#..F......#..L..Z...#............#',
         '#.........#.........#.........#..ddd...ddd.#',
         '#.w.......#...ddd...#.bi...ib.......F......#',
-        '#....X..............#....F....#...Z........#',
+        '#....X.....M........#....F....#...Z........#',
         '#.........#.........#...ZS....#.........Z..#',
-        '#..P....w.#..Z...L..#.b.....b.#.w....w...w.#',
-        '#......L..#.........#....H.L..#..L......L..#',
+        '#..P....w.#..Z...F..#.b.....b.#.w....w...w.#',
+        '#......F..#.........#....H.L..#..F......F..#',
         '#.........#.c.c.c.c.#.........#..........H.#',
         '############################################',
       ],
@@ -271,6 +276,9 @@
       case 'pickup': tone('sine', 520, 520, 0.12, 0.08); tone('sine', 780, 780, 0.12, 0.12, 0.08); break;
       case 'win': [392, 523, 659, 784].forEach((f, i) => tone('triangle', f, f, 0.15, 0.25, i * 0.12)); break;
       case 'click': tone('square', 1200, 1200, 0.03, 0.02); break;
+      // toggle switch: a hard clack, then a lighter snap as the contact seats
+      case 'switchon': tone('square', 900, 350, 0.07, 0.025); noiseHit(5000, 0.12, 0.02); tone('triangle', 1800, 1200, 0.05, 0.02, 0.045); break;
+      case 'switchoff': tone('square', 700, 250, 0.07, 0.025); noiseHit(4000, 0.12, 0.02); tone('triangle', 1300, 800, 0.05, 0.02, 0.045); break;
       case 'blast': noiseHit(1400, 0.8, 0.35); tone('sine', 110, 30, 0.7, 0.2); break;
       case 'buzz': tone('square', 120, 118, 0.035 * vol, 0.12); noiseHit(4000, 0.05 * vol, 0.04); break;
       case 'pump': noiseHit(2500, 0.15, 0.06); noiseHit(1800, 0.18, 0.08, 0.18); break;
@@ -289,7 +297,7 @@
       if (e.code === 'Space') fireQueued = true;
       if (e.code === 'KeyR') startReload();
       if (e.code === 'KeyQ') switchWeapon();
-      if (e.code === 'KeyF') { player.flashlight = !player.flashlight; sfx('click'); }
+      if (e.code === 'KeyF') { player.flashlight = !player.flashlight; sfx(player.flashlight ? 'switchon' : 'switchoff'); }
       if (e.code === 'Escape' || e.code === 'KeyP') state = 'pause';
     } else if (state === 'pause') {
       if (e.code === 'Escape' || e.code === 'KeyP') state = 'play';
@@ -366,7 +374,10 @@
     return pts;
   }
 
-  function loadLevel(i) {
+  // guns carried into the current level; a death restarts with the same loadout
+  let startLoadout = { shells: 0, smg: 0 };
+  function loadLevel(i, loadout = { shells: 0, smg: 0 }) {
+    startLoadout = loadout;
     levelIndex = i;
     const L = LEVELS[i];
     MH = L.map.length; MW = L.map[0].length;
@@ -394,6 +405,7 @@
         else if (ch === 'N') zombies.push(makeZombie(cx, cy, 'nurse'));
         else if (ch === 'H') pickups.push({ x: cx, y: cy, type: 'med', bob: rng() * 6 });
         else if (ch === 'S') pickups.push({ x: cx, y: cy, type: 'shotgun', bob: rng() * 6 });
+        else if (ch === 'M') pickups.push({ x: cx, y: cy, type: 'smg', bob: rng() * 6 });
         else if (ch === 'L') lamps.push({ x: cx, y: cy, r: L.lampR, rgb: L.lampRgb, kind: L.lampKind, flicker: false, cur: 1, t: 0 });
         else if (ch === 'F') lamps.push({ x: cx, y: cy, r: L.lampR * 0.85, rgb: L.flickerRgb, kind: 'tube', flicker: true, cur: 1, t: rng() * 2 });
         else if (ch === 'E') {
@@ -423,7 +435,7 @@
       x: start.x, y: start.y, r: PLAYER_R, angle: 0,
       hp: MAX_HP, ammo: MAG_SIZE, reload: 0, fireCd: 0, inv: 0,
       muzzle: 0, flashlight: true, walk: 0, recoil: 0,
-      weapon: 'pistol', shells: 0,
+      weapon: 'pistol', shells: startLoadout.shells, smg: startLoadout.smg,
     };
     cam = { x: clamp(player.x - W / 2, 0, MW * T - W), y: clamp(player.y - H / 2, 0, MH * T - H) };
     stats = { kills: 0, total: zombies.length, shots: 0, hits: 0, time: 0 };
@@ -756,9 +768,10 @@
   // ---------------------------------------------------------------- actions
   function advanceScreen() {
     if (state === 'title') { state = 'play'; bannerT = 3.5; }
-    else if (state === 'dead' && endT > 0.8) { loadLevel(levelIndex); state = 'play'; }
+    else if (state === 'dead' && endT > 0.8) { loadLevel(levelIndex, startLoadout); state = 'play'; }
     else if (state === 'win' && endT > 0.8) {
-      loadLevel(levelIndex + 1 < LEVELS.length ? levelIndex + 1 : 0);
+      const next = levelIndex + 1 < LEVELS.length;
+      loadLevel(next ? levelIndex + 1 : 0, next ? { shells: player.shells, smg: player.smg } : undefined);
       state = 'play';
     }
   }
@@ -772,12 +785,14 @@
 
   function switchWeapon() {
     const p = player;
-    if (p.weapon === 'pistol' && p.shells > 0) p.weapon = 'shotgun';
-    else if (p.weapon === 'shotgun') p.weapon = 'pistol';
-    else return;
+    const owned = ['pistol'];
+    if (p.shells > 0) owned.push('shotgun');
+    if (p.smg > 0) owned.push('smg');
+    if (owned.length < 2) return;
+    p.weapon = owned[(owned.indexOf(p.weapon) + 1) % owned.length];
     p.reload = 0;
     p.fireCd = 0.25;
-    sfx(p.weapon === 'shotgun' ? 'pump' : 'magin');
+    sfx(p.weapon === 'pistol' ? 'magin' : 'pump');
   }
 
   function fireBullet(a, range) {
@@ -803,6 +818,14 @@
       sfx('blast');
       sfx('pump');
       a += Math.PI; // shells eject backward-ish
+    } else if (p.weapon === 'smg') {
+      p.smg--;
+      p.fireCd = SMG_DELAY;
+      p.muzzle = 0.05;
+      a += rand(-SMG_SPREAD, SMG_SPREAD);
+      fireBullet(a, BULLET_RANGE);
+      shake = Math.max(shake, 2);
+      sfx('shot');
     } else {
       if (p.ammo <= 0) { sfx('empty'); startReload(); return; }
       p.ammo--;
@@ -832,6 +855,10 @@
     if (p.weapon === 'shotgun' && p.shells === 0) {
       p.weapon = 'pistol';
       showMessage('Out of shells — back to the pistol');
+    }
+    if (p.weapon === 'smg' && p.smg === 0) {
+      p.weapon = p.shells > 0 ? 'shotgun' : 'pistol';
+      showMessage('SMG empty');
     }
     if (p.weapon === 'pistol' && p.ammo === 0) startReload();
   }
@@ -970,6 +997,8 @@
     // a press during cooldown fires as soon as the gun is ready
     if (fireQueued && p.fireCd <= 0 && p.reload <= 0) { fireQueued = false; shoot(); }
     if (fireQueued && p.reload > 0) fireQueued = false;
+    // SMG is automatic: holding space keeps firing
+    if (keys.Space && p.weapon === 'smg' && p.fireCd <= 0 && p.reload <= 0) shoot();
     messageT -= dt;
     if (p.reload > 0) {
       p.reload -= dt;
@@ -999,6 +1028,15 @@
         sfx('pickup');
         sfx('pump');
         showMessage(`SHOTGUN — ${SHOTGUN_SHELLS} shells · Q to switch weapons`);
+      } else if (it.type === 'smg') {
+        p.smg += SMG_AMMO;
+        p.weapon = 'smg';
+        p.reload = 0;
+        pickups.splice(i, 1);
+        burst(it.x, it.y, 16, '#ffcf6a', 140, 0.5);
+        sfx('pickup');
+        sfx('pump');
+        showMessage(`SMG — ${SMG_AMMO} rounds · Q to switch weapons`);
       }
     }
 
@@ -1227,6 +1265,15 @@
       ctx.fillRect(10 + rc, -2, 22, 4);
       ctx.fillStyle = '#6b4a2a';
       ctx.fillRect(16 + rc, -3, 8, 6);
+    } else if (p.weapon === 'smg') {
+      ctx.fillRect(2 + rc, 2, 10, 4);
+      ctx.fillRect(6 + rc, -7, 12, 4);
+      ctx.fillStyle = '#1d1f24';
+      ctx.fillRect(-2 + rc, -3, 12, 6);
+      ctx.fillRect(10 + rc, -2, 20, 4);
+      ctx.fillStyle = '#3a3d45';
+      ctx.fillRect(8 + rc, 2, 5, 9);
+      ctx.fillRect(14 + rc, -3, 8, 6);
     } else {
       ctx.fillRect(2 + rc, -9, 12, 4);
       ctx.fillRect(2 + rc, 5, 12, 4);
@@ -1516,6 +1563,20 @@
         ctx.restore();
         continue;
       }
+      if (it.type === 'smg') {
+        ctx.fillStyle = radial(ctx, it.x, it.y, 24, [[0, 'rgba(255,200,90,0.35)'], [1, 'rgba(255,200,90,0)']]);
+        ctx.beginPath(); ctx.arc(it.x, it.y, 24, 0, Math.PI * 2); ctx.fill();
+        ctx.save();
+        ctx.translate(it.x, it.y + b);
+        ctx.rotate(-0.5);
+        ctx.fillStyle = '#1d1f24';
+        ctx.fillRect(-10, -3, 22, 6);
+        ctx.fillStyle = '#3a3d45';
+        ctx.fillRect(-2, 1, 5, 9);
+        ctx.fillRect(4, -4, 8, 8);
+        ctx.restore();
+        continue;
+      }
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.fillRect(it.x - 8, it.y - 5, 18, 14);
       ctx.fillStyle = '#eee';
@@ -1566,7 +1627,7 @@
     }
 
     if (p.muzzle > 0) {
-      const big = p.weapon === 'shotgun';
+      const big = p.weapon === 'shotgun';  // smg uses the small flash
       const md = big ? 34 : 26, mr = big ? 22 : 14;
       const mxp = p.x + Math.cos(p.angle) * md, myp = p.y + Math.sin(p.angle) * md;
       ctx.fillStyle = radial(ctx, mxp, myp, mr, [[0, 'rgba(255,255,220,1)'], [0.4, 'rgba(255,190,80,0.8)'], [1, 'rgba(255,120,0,0)']]);
@@ -1640,6 +1701,16 @@
         ctx.fillStyle = i < p.shells ? '#d8aa48' : 'rgba(255,255,255,0.1)';
         ctx.fillRect(bx, H - 26, 9, 4);
       }
+    } else if (p.weapon === 'smg') {
+      ctx.fillText('SMG', W - 204, H - 56);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#eee';
+      ctx.fillText(`${p.smg}`, W - 24, H - 56);
+      for (let i = 0; i < 30; i++) {
+        const bx = W - 204 + i * 6.5;
+        ctx.fillStyle = i < p.smg ? '#d8aa48' : 'rgba(255,255,255,0.1)';
+        ctx.fillRect(bx, H - 38, 4, 14);
+      }
     } else {
       ctx.fillText('PISTOL', W - 204, H - 56);
       ctx.textAlign = 'right';
@@ -1654,6 +1725,10 @@
       if (p.shells > 0) {
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
         ctx.fillText(`Q — shotgun (${p.shells})`, W - 24, H - 80);
+      }
+      if (p.smg > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText(`Q — smg (${p.smg})`, W - 24, p.shells > 0 ? H - 96 : H - 80);
       }
     }
     if (p.reload > 0) {
@@ -1729,7 +1804,7 @@
         '← / →      — turn',
         'Space      — shoot (2 pistol hits kills a zombie)',
         'R          — reload pistol (8 rounds per mag)',
-        'Q          — switch weapon (find the shotgun!)',
+        'Q          — cycle weapons (shotgun and SMG are hidden in the levels)',
         'F          — flashlight (zombies spot you easier with it on)',
       ], H / 2 + 5);
       blink('PRESS SPACE TO START', H - 60);
@@ -1799,7 +1874,9 @@
   }
 
   // ---------------------------------------------------------------- loop
-  loadLevel(0);
+  // ?level=2 starts on that level
+  const startLevel = parseInt(new URLSearchParams(location.search).get('level'), 10);
+  loadLevel(startLevel >= 1 && startLevel <= LEVELS.length ? startLevel - 1 : 0);
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.033, (now - last) / 1000);
