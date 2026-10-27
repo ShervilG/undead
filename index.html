@@ -2018,7 +2018,10 @@
     } else if (state === 'pause') {
       overlay(0.6);
       title('PAUSED', '#e5e5e5');
-      blink('PRESS P TO RESUME', H / 2 + 40);
+      sub(LEVELS[levelIndex].name, 0, '#ddd');
+      sub('OBJECTIVE', 24, '#9ca3af');
+      sub(LEVELS[levelIndex].hint, 48, '#3cff7a');
+      blink('PRESS P TO RESUME', H / 2 + 100);
     } else if (state === 'dead') {
       overlay(Math.min(0.75, endT));
       title('YOU DIED', '#c62828');
