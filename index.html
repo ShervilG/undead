@@ -121,10 +121,38 @@
   const FLASH_HALF = 0.42;
 
   // Legend: # wall, . floor, P player, Z zombie, L lamp, F flickering lamp, H medkit, S shotgun, M smg, K key, D boss (Headmaster),
-  //   B boss (Bloater), N boss (Nurse), E exit
+  //   B boss (Bloater), N boss (Nurse), T boss (Station Master), E exit
+  //   train: r crate (solid), ' ' scenery outside the train (not drawn, acts as wall)
   //   school props: s student desk, l locker (solid)
   //   hospital props: b bed, d desk, c cabinet, w wheelchair, o operating table (solid);
   //   i IV stand, X red-cross floor mark (decor, walkable)
+  // The train: six 12x7 carriages coupled end to end, with scenery rushing past outside
+  function buildTrainMap() {
+    const cars = [
+      ['rr....L...rr', 'r..........r', '......rr....', 'P.........Z.', '....rr......', 'r.....L....r', 'rr.H.....rrr'],
+      ['r....rr...r.', '..Z.....F...', '............', '...rr.......', '............', '.Z.....rr...', 'rr...L....rr'],
+      ['r..L.....rr.', 'r........Z..', '..rrr.......', '........S...', '..rrr....Z..', 'r.......L..r', 'rr......rr..'],
+      ['r...F....rrr', '.Z..........', '..rr....rr..', '....Z....H..', '..rr....rr..', '............', 'rrr..L.....r'],
+      ['rr..L....F.r', '....Z.......', '....rrr.....', '.Z..........', '....rrr.....', '..Z...M.....', 'rr..L....Frr'],
+      ['rr...L.....r', 'r...........', '..Z.....rr..', '......T....E', '..Z.....rr..', 'r...........', 'rr...L.....r'],
+    ];
+    const w = 1 + cars.length * 13;
+    const rows = [];
+    for (let i = 0; i < 4; i++) rows.push(' '.repeat(w));
+    rows.push('#'.repeat(w));
+    for (let r = 0; r < 7; r++) {
+      let line = '#';
+      cars.forEach((c, i) => {
+        // a 3-tile doorway joins neighbouring carriages; the last one is the sealed rear wall
+        line += c[r] + (r >= 2 && r <= 4 && i < cars.length - 1 ? '.' : '#');
+      });
+      rows.push(line);
+    }
+    rows.push('#'.repeat(w));
+    for (let i = 0; i < 4; i++) rows.push(' '.repeat(w));
+    return rows;
+  }
+
   const LEVELS = [
     {
       name: 'Level 1 — The Basement',
@@ -230,6 +258,14 @@
         '############################################',
       ],
     },
+    {
+      name: 'Level 4 — The Train',
+      hint: 'Fight through the carriages — the Station Master guards the rear EXIT',
+      theme: 'train',
+      darkness: 0.5,
+      lampR: 170, lampRgb: '255,232,180', lampKind: 'tube', flickerRgb: '255,232,180',
+      map: buildTrainMap(),
+    },
   ];
 
   let viewK = 1;
@@ -298,6 +334,7 @@
     switch (name) {
       case 'shot': noiseHit(2200, 0.5, 0.18); tone('sine', 140, 40, 0.5, 0.12); break;
       case 'swing': noiseHit(3500, 0.25, 0.12); tone('sine', 900, 300, 0.08, 0.1); break;
+      case 'clack': tone('square', 110, 70, 0.04, 0.05); noiseHit(900, 0.05, 0.05); break;
       case 'empty': tone('square', 1800, 1500, 0.05, 0.03); break;
       case 'magout': tone('square', 900, 600, 0.06, 0.04); noiseHit(3000, 0.08, 0.05, 0.05); break;
       case 'magin': tone('square', 700, 1100, 0.08, 0.04); tone('square', 1300, 1300, 0.06, 0.03, 0.08); break;
@@ -375,7 +412,7 @@
   // ---------------------------------------------------------------- level
   let levelIndex = 0;
   let MW = 0, MH = 0;
-  let grid, lit, flow, flowTile = -1;
+  let grid, lit, flow, flowTile = -1, outside;
   let lamps, zombies, pickups, bullets, particles, exitPos, exitLamp, props;
   let theme = 'basement', darkness = 0.6;
   let player, cam, stats, state = 'title';
@@ -449,6 +486,7 @@
     MH = L.map.length; MW = L.map[0].length;
     grid = new Uint8Array(MW * MH);
     lit = new Uint8Array(MW * MH);
+    outside = new Uint8Array(MW * MH);
     flow = new Int16Array(MW * MH);
     flowTile = -1;
     lamps = []; zombies = []; pickups = []; bullets = []; particles = []; props = [];
@@ -456,13 +494,14 @@
     darkness = L.darkness;
     const rng = seeded(1337 + i);
     let start = { x: T * 1.5, y: T * 1.5 };
-    const SOLID_PROPS = { b: 'bed', d: 'desk', c: 'cabinet', w: 'wheelchair', o: 'table', s: 'sdesk', l: 'locker' };
+    const SOLID_PROPS = { r: 'crate', b: 'bed', d: 'desk', c: 'cabinet', w: 'wheelchair', o: 'table', s: 'sdesk', l: 'locker' };
     const DECOR = { i: 'iv', X: 'cross' };
     for (let y = 0; y < MH; y++) {
       for (let x = 0; x < MW; x++) {
         const ch = L.map[y][x];
         const cx = x * T + T / 2, cy = y * T + T / 2;
         if (ch === '#') grid[y * MW + x] = 1;
+        else if (ch === ' ') { grid[y * MW + x] = 1; outside[y * MW + x] = 1; }
         else if (SOLID_PROPS[ch]) { grid[y * MW + x] = 2; props.push({ x, y, type: SOLID_PROPS[ch], r: rng() }); }
         else if (DECOR[ch]) props.push({ x, y, type: DECOR[ch], r: rng() });
         else if (ch === 'P') start = { x: cx, y: cy };
@@ -470,6 +509,7 @@
         else if (ch === 'B') zombies.push(makeZombie(cx, cy, 'bloater'));
         else if (ch === 'N') zombies.push(makeZombie(cx, cy, 'nurse'));
         else if (ch === 'D') zombies.push(makeZombie(cx, cy, 'headmaster'));
+        else if (ch === 'T') zombies.push(makeZombie(cx, cy, 'stationmaster'));
         else if (ch === 'K') pickups.push({ x: cx, y: cy, type: 'key', bob: rng() * 6 });
         else if (ch === 'H') pickups.push({ x: cx, y: cy, type: 'med', bob: rng() * 6 });
         else if (ch === 'S') pickups.push({ x: cx, y: cy, type: 'shotgun', bob: rng() * 6 });
@@ -540,6 +580,7 @@
     const hospital = theme === 'hospital';
     const shirts = hospital
       ? ['#9ec5d6', '#a8cfc4', '#c9d8e0', '#b7cfe0']   // hospital gowns
+      : theme === 'train' ? ['#6a5a3a', '#3a4a6a', '#5a3a4a', '#4a5a4a', '#7a6a58']   // passengers
       : ['#4a5568', '#5b4636', '#3f5a4a', '#6b3a3a', '#45455e'];
     const z = {
       x, y, r: ZOMBIE_R, hp: ZOMBIE_HP, maxHp: ZOMBIE_HP, angle: Math.random() * Math.PI * 2,
@@ -557,6 +598,13 @@
         r: BOSS_R, hp: BOSS_HP, maxHp: BOSS_HP, speed: BOSS_SPEED,
         damage: BOSS_DAMAGE, windupTime: BOSS_WINDUP, cooldown: BOSS_COOLDOWN,
         home: { x, y }, roared: false, shirt: '#6b5a44', skin: '#9aa862', arm: '#859552',
+      });
+    } else if (bossType === 'stationmaster') {
+      Object.assign(z, {
+        boss: true, bossType, bossName: 'The Station Master', leash: BOSS_LEASH,
+        r: BOSS_R, hp: BOSS_HP, maxHp: BOSS_HP, speed: BOSS_SPEED,
+        damage: BOSS_DAMAGE, windupTime: BOSS_WINDUP, cooldown: BOSS_COOLDOWN,
+        home: { x, y }, roared: false, shirt: '#1f3a5c', skin: '#b99d80', arm: '#1f3a5c',
       });
     } else if (bossType === 'nurse') {
       Object.assign(z, {
@@ -576,6 +624,32 @@
       });
     }
     return z;
+  }
+
+  function drawTrainFloor(x, y, rng) {
+    // worn timber planks; the doorway tiles between carriages are bare steel coupling plates
+    if ((x - 1) % 13 === 12) {
+      mctx.fillStyle = '#2c2f33';
+      mctx.fillRect(x * T, y * T, T, T);
+      mctx.fillStyle = 'rgba(255,255,255,0.08)';
+      for (let k = 0; k < 4; k++) mctx.fillRect(x * T, y * T + k * 8, T, 1);
+      return;
+    }
+    const v = 58 + Math.floor(rng() * 10);
+    mctx.fillStyle = `rgb(${v + 14},${v},${v - 14})`;
+    mctx.fillRect(x * T, y * T, T, T);
+    mctx.fillStyle = 'rgba(0,0,0,0.3)';
+    mctx.fillRect(x * T, y * T + 15, T, 1);
+    mctx.fillRect(x * T + 8 + Math.floor(rng() * 16), y * T, 1, 15);
+    mctx.fillRect(x * T + 8 + Math.floor(rng() * 16), y * T + 16, 1, 16);
+    mctx.fillStyle = 'rgba(255,255,255,0.04)';
+    mctx.fillRect(x * T, y * T, T, 1);
+    if (rng() < 0.05) {
+      mctx.fillStyle = 'rgba(70,14,10,0.3)';
+      mctx.beginPath();
+      mctx.ellipse(x * T + rng() * T, y * T + rng() * T, 5 + rng() * 8, 3 + rng() * 5, rng() * 3, 0, Math.PI * 2);
+      mctx.fill();
+    }
   }
 
   function drawBasementFloor(x, y, rng) {
@@ -654,6 +728,18 @@
     const c = mctx;
     c.save();
     switch (p.type) {
+      case 'crate': {
+        const metal = p.r > 0.7;
+        c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(ox + 3, oy + 4, T - 2, T - 2);
+        c.fillStyle = metal ? '#3d5a4a' : '#8a6234'; c.fillRect(ox + 1, oy + 1, T - 2, T - 2);
+        c.fillStyle = metal ? '#4f7260' : '#a87c46'; c.fillRect(ox + 3, oy + 3, T - 6, T - 6);
+        c.strokeStyle = metal ? '#2a3d33' : '#5e4020'; c.lineWidth = 2;
+        c.strokeRect(ox + 2, oy + 2, T - 4, T - 4);
+        c.beginPath(); c.moveTo(ox + 4, oy + 4); c.lineTo(ox + T - 4, oy + T - 4); c.moveTo(ox + T - 4, oy + 4); c.lineTo(ox + 4, oy + T - 4); c.stroke();
+        c.fillStyle = 'rgba(255,255,255,0.15)'; c.fillRect(ox + 3, oy + 3, T - 6, 2);
+        if (p.r < 0.2) { c.fillStyle = 'rgba(125,12,12,0.5)'; c.fillRect(ox + 18, oy + 20, 7, 5); }
+        break;
+      }
       case 'bed':
         c.fillStyle = 'rgba(40,60,70,0.28)'; c.fillRect(ox + 6, oy + 3, 24, 29);
         c.fillStyle = '#8fa3ad'; c.fillRect(ox + 4, oy + 1, 24, 30);
@@ -758,13 +844,14 @@
     mapCanvas.width = MW * T * MS;
     mapCanvas.height = MH * T * MS;
     mctx.setTransform(MS, 0, 0, MS, 0, 0);
+    const train = theme === 'train';
     mctx.fillStyle = hosp ? '#b9c4c9' : school ? '#1a1612' : '#0c0c0e';
-    mctx.fillRect(0, 0, MW * T, MH * T);
+    if (!train) mctx.fillRect(0, 0, MW * T, MH * T);  // train: leave the outside transparent for the scenery
     // floor
     for (let y = 0; y < MH; y++) {
       for (let x = 0; x < MW; x++) {
         if (isWall(x, y)) continue;
-        if (hosp) drawHospitalFloor(x, y, rng); else if (school) drawSchoolFloor(x, y, rng); else drawBasementFloor(x, y, rng);
+        if (train) drawTrainFloor(x, y, rng); else if (hosp) drawHospitalFloor(x, y, rng); else if (school) drawSchoolFloor(x, y, rng); else drawBasementFloor(x, y, rng);
       }
     }
     // wall shadows cast down/right onto floor
@@ -780,8 +867,26 @@
     // walls
     for (let y = 0; y < MH; y++) {
       for (let x = 0; x < MW; x++) {
-        if (!isWall(x, y)) continue;
-        if (hosp) {
+        if (!isWall(x, y) || outside[y * MW + x]) continue;
+        if (train) {
+          // riveted steel hull, green with a rust-red skirt
+          const v = 70 + Math.floor(rng() * 6);
+          mctx.fillStyle = `rgb(${v - 28},${v - 6},${v - 22})`;
+          mctx.fillRect(x * T, y * T, T, T);
+          mctx.fillStyle = 'rgba(0,0,0,0.25)';
+          mctx.fillRect(x * T + 15, y * T, 1, T);
+          mctx.fillStyle = 'rgba(255,255,255,0.1)';
+          mctx.fillRect(x * T + 16, y * T, 1, T);
+          mctx.fillStyle = '#9aa39c';
+          for (const [rx, ry] of [[4, 4], [26, 4], [4, 26], [26, 26]]) mctx.fillRect(x * T + rx, y * T + ry, 2, 2);
+          mctx.fillStyle = '#4a4f4c';
+          if (!isWall(x, y + 1)) mctx.fillRect(x * T, y * T + T - 3, T, 3);
+          if (!isWall(x, y - 1)) mctx.fillRect(x * T, y * T, T, 2);
+          if (!isWall(x + 1, y)) mctx.fillRect(x * T + T - 2, y * T, 2, T);
+          if (!isWall(x - 1, y)) mctx.fillRect(x * T, y * T, 2, T);
+          mctx.fillStyle = '#7a3a2c';
+          if (!isWall(x, y + 1)) mctx.fillRect(x * T, y * T + T - 9, T, 4);
+        } else if (hosp) {
           const v = 206 + Math.floor(rng() * 6);
           mctx.fillStyle = `rgb(${v},${v + 5},${v + 8})`;
           mctx.fillRect(x * T, y * T, T, T);
@@ -1184,6 +1289,7 @@
   }
 
   // ---------------------------------------------------------------- update
+  let clackT = 0;
   function update(dt) {
     updateLamps(dt);
     if (state === 'dead' || state === 'win') endT += dt;
@@ -1192,6 +1298,11 @@
     const p = player;
     stats.time += dt;
     bannerT -= dt;
+    if (theme === 'train') {
+      // wheels over the rail joints: clack-clack ... clack-clack
+      clackT -= dt;
+      if (clackT <= 0) { clackT = 0.9; sfx('clack'); setTimeout(() => sfx('clack'), 130); }
+    }
 
     // tank controls: left/right turn, up/down walk along facing
     const turn = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
@@ -1450,7 +1561,7 @@
       z.groanT -= dt;
       if (z.groanT <= 0) {
         z.groanT = rand(3, 9);
-        const groan = z.bossType === 'bloater' || z.bossType === 'headmaster' ? 'bossgroan' : z.bossType === 'nurse' ? 'nursegroan' : 'groan';
+        const groan = z.bossType === 'bloater' || z.bossType === 'headmaster' || z.bossType === 'stationmaster' ? 'bossgroan' : z.bossType === 'nurse' ? 'nursegroan' : 'groan';
         if (d < 500) sfx(groan, clamp(1 - d / 500, 0.1, 1) * (z.chasing ? 1.4 : 0.8));
       }
     }
@@ -1615,6 +1726,18 @@
         ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.stroke();
       }
+    } else if (z.bossType === 'stationmaster') {
+      // navy coat, double row of brass buttons, red sash and a whistle chain
+      ctx.fillStyle = '#b91c1c'; ctx.fillRect(-6, -12, 3, 24);
+      ctx.fillStyle = '#d9b25e';
+      for (const by of [-6, -2, 2, 6]) { ctx.fillRect(3, by - 1, 2, 2); ctx.fillRect(7, by - 1, 2, 2); }
+      ctx.strokeStyle = '#d9b25e'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(4, 0, 6, -1.2, 1.2); ctx.stroke();
+      if (z.windup > 0) {
+        ctx.strokeStyle = 'rgba(255,60,40,0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.stroke();
+      }
     } else if (z.bossType === 'bloater') {
       // bulging gut with pustules
       ctx.fillStyle = '#a3b06a';
@@ -1655,7 +1778,7 @@
     }
     ctx.fillStyle = z.skin;
     ctx.beginPath(); ctx.arc(1, 0, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = nurse ? '#2d2118' : head ? '#b9bec6' : '#4e6a3a';
+    ctx.fillStyle = nurse ? '#2d2118' : head ? '#b9bec6' : z.bossType === 'stationmaster' ? '#2a2a30' : '#4e6a3a';
     ctx.beginPath(); ctx.arc(-1, -2, 3, 0, Math.PI * 2); ctx.fill();
     if (nurse) {
       // nurse's cap with a red cross
@@ -1663,6 +1786,13 @@
       ctx.beginPath(); ctx.ellipse(-1.5, 0, 4.5, 6.5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#d32f2f';
       ctx.fillRect(-3.3, -0.8, 3.6, 1.6); ctx.fillRect(-2.3, -1.8, 1.6, 3.6);
+    } else if (z.bossType === 'stationmaster') {
+      // peaked cap with a gold band and a bushy moustache
+      ctx.fillStyle = '#16294a';
+      ctx.beginPath(); ctx.arc(-0.5, 0, 6.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#d9b25e'; ctx.fillRect(1.5, -6, 2, 12);
+      ctx.fillStyle = '#0d1a30'; ctx.fillRect(4, -5, 4, 10);
+      ctx.fillStyle = '#d9b25e'; ctx.beginPath(); ctx.arc(-1, 0, 1.6, 0, Math.PI * 2); ctx.fill();
     } else if (head) {
       // grey hair and round glasses
       ctx.fillStyle = '#b9bec6';
@@ -1751,6 +1881,13 @@
     }
     lctx.globalAlpha = 1;
 
+    if (theme === 'train') {
+      // dawn light outside the train: don't darken the scenery bands
+      lctx.fillStyle = 'rgba(0,0,0,0.92)';
+      lctx.fillRect(vx - 10, -10, W + 20, 4 * T + 10);
+      lctx.fillRect(vx - 10, (MH - 4) * T, W + 20, 4 * T + 10);
+    }
+
     const ambR = p.flashlight ? 75 : 60;
     lctx.fillStyle = radial(lctx, p.x, p.y, ambR, [[0, 'rgba(0,0,0,0.85)'], [1, 'rgba(0,0,0,0)']]);
     fillPoly(lctx, visPoly(p.x, p.y, ambR, 40));
@@ -1788,15 +1925,85 @@
     ctx.restore();
   }
 
+  // Scenery streaming past the train at dawn (it travels left to right, so the world slides right to left)
+  const TRAIN_SPEED = 380;
+  const hash = k => ((k * 40503 + 17) * 2654435761 >>> 0) / 4294967296;
+  function drawScenery(vx, vy) {
+    const off = stats.time * TRAIN_SPEED;
+    const bandH = 4 * T;
+    for (const top of [0, (MH - 4) * T]) {
+      const y0 = top - vy, upper = top === 0;
+      const edge = upper ? y0 + bandH : y0;          // the side touching the train
+      const dir = upper ? -1 : 1;                    // direction away from the train
+      const g = ctx.createLinearGradient(0, edge, 0, edge + dir * bandH);
+      g.addColorStop(0, '#8d9c5a');
+      g.addColorStop(1, '#a9b46c');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, y0, W, bandH);
+      // soft sunrise glow on the far side
+      ctx.fillStyle = 'rgba(255,170,110,0.16)';
+      ctx.fillRect(0, y0, W, bandH);
+      // gravel verge beside the train
+      ctx.fillStyle = '#9a9283';
+      ctx.fillRect(0, upper ? edge - 12 : edge, W, 12);
+      // layers: far to near, nearer layers rush past faster (parallax)
+      const layers = [
+        { sp: 0.35, gap: 110, d0: 70, d1: 118, kind: 'tree', salt: 1 },
+        { sp: 0.6, gap: 70, d0: 38, d1: 80, kind: 'bush', salt: 2 },
+        { sp: 0.9, gap: 52, d0: 18, d1: 48, kind: 'bush', salt: 3 },
+        { sp: 1.2, gap: 36, d0: 6, d1: 16, kind: 'post', salt: 4 },
+        { sp: 1.6, gap: 26, d0: 1, d1: 10, kind: 'streak', salt: 5 },
+      ];
+      for (const L of layers) {
+        const o = off * L.sp;
+        const k0 = Math.floor((vx + o) / L.gap);
+        for (let k = k0 - 2; k < k0 + W / L.gap + 3; k++) {
+          const h = hash(k * 7 + L.salt * 1000), h2 = hash(k * 13 + L.salt * 77);
+          const x = k * L.gap - o - vx + h2 * L.gap * 0.6;
+          const depth = L.d0 + h * (L.d1 - L.d0);
+          const y = edge + dir * (12 + depth);
+          if (L.kind === 'tree') {
+            const rad = 14 + h2 * 10;
+            ctx.fillStyle = 'rgba(60,40,20,0.25)'; ctx.beginPath(); ctx.arc(x + 5, y + 5, rad, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = h < 0.5 ? '#4f7a3a' : '#5d8a3f';
+            ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = 'rgba(255,225,150,0.25)';
+            ctx.beginPath(); ctx.arc(x - rad * 0.3, y - rad * 0.3, rad * 0.55, 0, Math.PI * 2); ctx.fill();
+          } else if (L.kind === 'bush') {
+            const rad = 6 + h2 * 7;
+            ctx.fillStyle = 'rgba(60,40,20,0.22)'; ctx.beginPath(); ctx.arc(x + 3, y + 3, rad, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = h < 0.4 ? '#6b8f3c' : h < 0.8 ? '#7a9a45' : '#8f8a4a';
+            for (const [dx, dy, r] of [[0, 0, 1], [-0.7, 0.3, 0.7], [0.7, -0.2, 0.75]]) {
+              ctx.beginPath(); ctx.arc(x + dx * rad, y + dy * rad, rad * r, 0, Math.PI * 2); ctx.fill();
+            }
+            if (h > 0.85) { ctx.fillStyle = '#e8a0b0'; ctx.fillRect(x - 1, y - 1, 3, 3); }  // wildflower
+          } else if (L.kind === 'post') {
+            if (k % 9 === 0) {                                  // telegraph pole
+              ctx.fillStyle = '#4a3a2a'; ctx.fillRect(x - 2, y - 9, 4, 18);
+              ctx.fillRect(x - 11, y - 7, 22, 3);
+            } else {                                            // fence post and rail
+              ctx.fillStyle = '#6a5440'; ctx.fillRect(x - 1.5, y - 3, 3, 6);
+              ctx.fillRect(x - L.gap, y - 0.5, L.gap, 1.5);
+            }
+          } else {
+            ctx.fillStyle = 'rgba(255,255,255,0.28)';
+            ctx.fillRect(x, y, 18 + h * 26, 1);
+          }
+        }
+      }
+    }
+  }
+
   function render() {
     const p = player;
     const sx = shake ? rand(-shake, shake) : 0, sy = shake ? rand(-shake, shake) : 0;
-    const vx = cam.x + sx, vy = cam.y + sy;
+    const vx = cam.x + sx, vy = cam.y + sy + (theme === 'train' ? Math.sin(stats.time * 31) * 0.7 : 0);
 
     ctx.setTransform(viewK, 0, 0, viewK, 0, 0);
     ctx.fillStyle = '#040406';
     ctx.fillRect(0, 0, W, H);
 
+    if (theme === 'train') drawScenery(vx, vy);
     const mx = clamp(vx, 0, MW * T - W), my = clamp(vy, 0, MH * T - H);
     ctx.drawImage(mapCanvas, mx * MS, my * MS, W * MS, H * MS, mx - vx, my - vy, W, H);
 
@@ -2153,7 +2360,7 @@
       title('LEVEL CLEARED', '#3cff7a');
       const acc = stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0;
       sub(`${killLine()}  ·  Time ${fmtTime(stats.time)}  ·  Accuracy ${acc}%  ·  Health ${p.hp}/${MAX_HP}`, 0, '#ddd');
-      if (endT > 0.8) blink(levelIndex + 1 < LEVELS.length ? 'PRESS SPACE FOR NEXT LEVEL' : 'MORE LEVELS COMING · PRESS SPACE TO REPLAY', H / 2 + 70);
+      if (endT > 0.8) blink(levelIndex + 1 < LEVELS.length ? 'PRESS SPACE FOR NEXT LEVEL' : 'YOU MADE IT OFF THE TRAIN · PRESS SPACE TO REPLAY', H / 2 + 70);
     }
   }
 
